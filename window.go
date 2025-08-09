@@ -15,7 +15,6 @@ type WindowOptions struct {
 	Window time.Duration // e.g., 10 * time.Second
 	TTL    time.Duration // e.g., same as Window or a bit longer
 	Prefix string
-	Now    func() time.Time // optional; default = time.Now
 }
 
 type Window struct {
@@ -26,16 +25,11 @@ type Window struct {
 	limit  int
 	window time.Duration
 	ttl    time.Duration
-	now    func() time.Time
 }
 
 func NewWindow(ctx context.Context, redis redis.UniversalClient, opt WindowOptions) (*Window, error) {
 	if opt.Limit <= 0 || opt.Window <= 0 {
 		return nil, errors.New("invalid WindowOptions")
-	}
-
-	if opt.Now == nil {
-		opt.Now = time.Now
 	}
 
 	w := &Window{
@@ -44,7 +38,6 @@ func NewWindow(ctx context.Context, redis redis.UniversalClient, opt WindowOptio
 		limit:  opt.Limit,
 		window: opt.Window,
 		ttl:    opt.TTL,
-		now:    opt.Now,
 	}
 	if w.ttl <= 0 {
 		w.ttl = opt.Window
@@ -68,7 +61,7 @@ func (w *Window) AllowN(ctx context.Context, id string, cost int) (Decision, err
 	}
 
 	key := ZKey(w.prefix, id)
-	nowMs := w.now().UnixMilli()
+	nowMs := time.Now().UnixMilli()
 	args := []any{
 		nowMs,
 		w.window.Milliseconds(),

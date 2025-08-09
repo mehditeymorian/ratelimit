@@ -137,7 +137,6 @@ func TestSlidingWindow_Integration(t *testing.T) {
 				Limit:  tc.limit,
 				Window: tc.window,
 				TTL:    tc.window + 2*time.Second,
-				Now:    time.Now,
 			}
 			w, err := ratelimit.NewWindow(ctx, rdb, opts)
 			if err != nil {
