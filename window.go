@@ -27,7 +27,7 @@ type Window struct {
 	ttl    time.Duration
 }
 
-func NewWindow(ctx context.Context, redis redis.UniversalClient, opt WindowOptions) (*Window, error) {
+func NewWindow(ctx context.Context, redis redis.UniversalClient, opt WindowOptions) (RateLimiter, error) {
 	if opt.Limit <= 0 || opt.Window <= 0 {
 		return nil, errors.New("invalid WindowOptions")
 	}
