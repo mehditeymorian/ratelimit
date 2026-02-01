@@ -18,7 +18,7 @@ type WindowOptions struct {
 }
 
 type Window struct {
-	redis redis.UniversalClient
+	redis func(ctx context.Context) redis.UniversalClient
 	sha   string
 
 	prefix string
@@ -27,13 +27,13 @@ type Window struct {
 	ttl    time.Duration
 }
 
-func NewWindow(ctx context.Context, redis redis.UniversalClient, opt WindowOptions) (RateLimiter, error) {
+func NewWindowWithDynamicCtx(ctx context.Context, redisFunc func(context.Context) redis.UniversalClient, opt WindowOptions) (RateLimiter, error) {
 	if opt.Limit <= 0 || opt.Window <= 0 {
 		return nil, errors.New("invalid WindowOptions")
 	}
 
 	w := &Window{
-		redis:  redis,
+		redis:  redisFunc,
 		prefix: opt.Prefix,
 		limit:  opt.Limit,
 		window: opt.Window,
@@ -43,12 +43,18 @@ func NewWindow(ctx context.Context, redis redis.UniversalClient, opt WindowOptio
 		w.ttl = opt.Window
 	}
 
-	sha, err := redis.ScriptLoad(ctx, luaTokenWindowScript).Result()
+	sha, err := redisFunc(ctx).ScriptLoad(ctx, luaTokenWindowScript).Result()
 	if err != nil {
 		return nil, err
 	}
 	w.sha = sha
 	return w, nil
+}
+
+func NewWindow(ctx context.Context, r redis.UniversalClient, opt WindowOptions) (RateLimiter, error) {
+	return NewWindowWithDynamicCtx(ctx, func(ctx context.Context) redis.UniversalClient {
+		return r
+	}, opt)
 }
 
 func (w *Window) Allow(ctx context.Context, id string) (Decision, error) {
@@ -70,10 +76,12 @@ func (w *Window) AllowN(ctx context.Context, id string, cost int) (Decision, err
 		cost,
 	}
 
-	res, err := w.redis.EvalSha(ctx, w.sha, []string{key}, args...).Slice()
+	client := w.redis(ctx)
+
+	res, err := client.EvalSha(ctx, w.sha, []string{key}, args...).Slice()
 	if isNoScript(err) {
-		if w.sha, err = w.redis.ScriptLoad(ctx, luaTokenWindowScript).Result(); err == nil {
-			res, err = w.redis.EvalSha(ctx, w.sha, []string{key}, args...).Slice()
+		if w.sha, err = client.ScriptLoad(ctx, luaTokenWindowScript).Result(); err == nil {
+			res, err = client.EvalSha(ctx, w.sha, []string{key}, args...).Slice()
 			if err != nil {
 				return Decision{}, fmt.Errorf("failed to re-execute script after NOSCRIPT error: %w", err)
 			}
